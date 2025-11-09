@@ -1,0 +1,10 @@
+코드 실행 전 구글드라이브 파일 경로
+MyDrive
+	ㄴ gis_project
+    		ㄴ clipped_정사영상.tif
+    		ㄴ clipped_buildings.shp
+    		ㄴ clipped_buildings.shx
+ 		ㄴ clipped_buildings.dbf
+    		ㄴ clipped_buildings.cpg
+		ㄴ clipped_buildings.prj
+
