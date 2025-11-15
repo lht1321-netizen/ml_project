@@ -55,21 +55,35 @@ class criterion(nn.Module):
         target_class = torch.ones(B*Q, dtype=torch.int64, device=predicted_class.device)
         target_class[idx] = 0
 
-        class_loss = F.cross_entropy(predicted_class.reshape(B*Q, 2), target_class, self.background_ratio)
+        class_loss = F.cross_entropy(predicted_class.reshape(B*Q, 2), target_class, self.background_ratio, self.background_ratio.to(predicted_class.device))
         output = {'class_loss': class_loss}
         return output
     
     def get_query_idx1(self, matched: list[tuple], Q:int):
+        if not matched or all(len(q) == 0 for q, _ in matched):
+            print("matched가 비어 있습니다.")
+            return torch.tensor([], dtype=torch.int64, device='cuda' if torch.cuda.is_available() else 'cpu') # device 주의
         idx = torch.cat([i*Q + q for i, (q, _) in enumerate(matched)])
         return idx
     
     def get_query_idx2(self, matched: list[tuple]):
+        if not matched or all(len(q) == 0 for q, _ in matched):
+            print("matched가 비워있습니다.")
+            empty_tensor = torch.tensor([], dtype=torch.int64, device='cuda' if torch.cuda.is_available() else 'cpu')
         batch_idx = torch.cat([torch.full_like(q, i) for i, (q, _) in enumerate(matched)])
         query_idx = torch.cat([q for (q, _) in matched])
         return batch_idx, query_idx 
 
     def calc_mask_dice_loss(self, matched: list[tuple], predicted_mask:Tensor, label: list[dict]):
         q_idx = self.get_query_idx2(matched)
+        
+        if q_idx[0].numel() == 0:
+            print("매칭된 것이 없습니다.")
+            return {
+                'mask_loss': torch.tensor(0.0, device=predicted_mask.device),
+                'dice_loss': torch.tensor(0.0, device=predicted_mask.device)
+            }
+
         #(B, Q, H/4, W/4) -> (T, 1, H/4, W/4) -> T: 확인할 총 마스크 수
         predicted_mask = predicted_mask[q_idx].unsqueeze(1)
         
@@ -82,7 +96,7 @@ class criterion(nn.Module):
         with torch.no_grad():
             coords = self.get_coords(predicted_mask).unsqueeze(1)
             target_point = F.grid_sample(
-                target_mask,
+                target_mask.float(),
                 coords,
                 align_corners=False
             ).squeeze(1).squeeze(1)
@@ -101,10 +115,15 @@ class criterion(nn.Module):
 
     def get_target_idx(self, matched: list[tuple]):
         target = [t for (_, t) in matched]
+        
+        if not target or all(t.numel() == 0 for t in target):
+            print("매칭된 것이 없습니다.")
+            return torch.tensor([], dtype=torch.int64, device='cuda' if torch.cuda.is_available() else 'cpu')
+        
         size = [t.numel() for t in target]
 
         idx = torch.cat(target)
-        offset = torch.tensor([0] + list(torch.cumsum(torch.tensor(size[:-1]), 0)))
+        offset = torch.tensor([0] + list(torch.cumsum(torch.tensor(size[:-1]), 0)), device=target[0].device)
         offset = torch.repeat_interleave(offset, torch.tensor(size))
 
         return idx + offset
